@@ -54,10 +54,10 @@ i18n.setLang('ja');
 ### 2b. React
 
 ```tsx
-import { MaruProvider, useMaruTranslation } from 'maru-i18n/react';
+import { MaruProvider, useMaruI18n } from 'maru-i18n/react';
 
 function App() {
-  const { t, setLang, lang } = useMaruTranslation();
+  const { t, setLang, lang } = useMaruI18n();
   return (
     <div>
       <h1>Hello, World!</h1>
@@ -112,23 +112,25 @@ Creates a new maru-i18n instance.
 ```ts
 interface MaruOptions {
   translations: Record<string, Record<string, string>>;
-  lang?: string;       // initial language
-  root?: HTMLElement;   // scan root (default: document.body)
-  include?: string;     // CSS selector — only translate inside matching elements
-  exclude?: string;     // CSS selector — skip matching elements
+  defaultLang?: string; // language of the original HTML text (e.g. "en")
+  lang?: string;        // initial language (defaults to defaultLang if set)
+  root?: HTMLElement;    // scan root (default: document.body)
+  include?: string;      // CSS selector — only translate inside matching elements
+  exclude?: string;      // CSS selector — skip matching elements
+  syncHtmlLang?: boolean; // update <html lang> on setLang (default: true)
 }
 ```
 
 ### React
 
 ```tsx
-import { MaruProvider, useMaruTranslation } from 'maru-i18n/react';
+import { MaruProvider, useMaruI18n } from 'maru-i18n/react';
 ```
 
 | Export | Description |
 |---|---|
 | `MaruProvider` | Context provider. Accepts `translations`, `lang`, `include`, `exclude` props |
-| `useMaruTranslation()` | Returns `{ t, setLang, lang, availableLangs }` |
+| `useMaruI18n()` | Returns `{ t, setLang, lang, availableLangs }` |
 
 ### Devtools
 

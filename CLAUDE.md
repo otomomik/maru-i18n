@@ -6,11 +6,13 @@ CSR-only i18n library. No HTML changes needed — just provide translation files
 - `npm run build` — ESM/CJS + UMD build
 - `npm run test` — vitest (happy-dom)
 - `npm run typecheck` — tsc --noEmit
+- `npm pack --dry-run` — verify package contents before publish
 - Examples: `npx vite serve examples/vanilla` or `npx vite serve examples/react`
 
 ## Architecture
 - `src/core.ts` — MaruI18n class. All instances share `data-maru-i18n` attribute. `setLang` only updates keys in own translations.
 - `src/adapters/react.tsx` — MaruProvider + useMaruI18n hook. Init runs in useEffect (DOM needed).
+- `src/index.ts` — Main entry. Exports `createMaruI18n`, `MaruI18n`, types, and `maru` singleton.
 - `src/devtools/index.ts` — Shadow DOM panel. Mounted on one instance; use `includeSelectors`/`excludeSelectors` to recognize other instances' areas.
 - Translations structure: `{ 'original text': { ja: '翻訳', zh: '翻译' } }` (keyed by original text, not by language)
 
@@ -28,6 +30,8 @@ CSR-only i18n library. No HTML changes needed — just provide translation files
 - React tests use @testing-library/react with `act()` for useEffect timing
 
 ## Gotchas
+- `useMaruTranslation` is deprecated — use `useMaruI18n` in all docs and code
+- Stub adapters (astro, preact, solid) exist in `src/adapters/` but are not in `exports` — they throw on import
 - Elements whose textContent is overwritten by JS must have `data-maru-ignore` to prevent setLang conflicts
 - Mixed text nodes: text node must exactly match a translation key after trim (no partial matching)
 - Wrap in `<span>` to make a single text node for mixed content translation
