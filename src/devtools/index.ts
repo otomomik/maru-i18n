@@ -555,10 +555,14 @@ export function mountDevtools(
                   return `<button class="filter-btn ${cls}${visibleStatuses.has(s) ? ' active' : ''}" data-filter="${s}">${lbl} ${selected}/${total}</button>`;
                 }).join('');
 
+                // Build text→index map for O(1) lookup
+                const textIdxMap = new Map<string, number>();
+                allTexts.forEach((t, i) => { if (!textIdxMap.has(t.text)) textIdxMap.set(t.text, i); });
+
                 const filtered = allTexts.filter((t) => visibleStatuses.has(t.status));
 
                 const listHtml = filtered.map(({ text, status, element }) => {
-                  const origIdx = allTexts.indexOf(allTexts.find((t) => t.text === text)!);
+                  const origIdx = textIdxMap.get(text) ?? 0;
                   const checked = !excludedTexts.has(text);
                   const [badgeClass, badgeLabel] = badgeLabels[status];
                   const clickable = element ? ' text-label' : '';
@@ -791,5 +795,6 @@ function escapeHtml(s: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

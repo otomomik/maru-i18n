@@ -694,5 +694,145 @@ describe('MaruI18n', () => {
       i18n.setLang('ja');
       expect(document.documentElement.lang).toBe('ja');
     });
+
+    it('should not update html lang when syncHtmlLang is false', () => {
+      setupDOM();
+      document.documentElement.lang = 'en';
+      const i18n = new MaruI18n();
+      i18n.init({ translations, defaultLang: 'en', syncHtmlLang: false });
+      i18n.setLang('ja');
+      expect(document.documentElement.lang).toBe('en');
+    });
+  });
+
+  // ===========================================
+  // setLang skip if unchanged
+  // ===========================================
+  describe('setLang skip if unchanged', () => {
+    it('should not fire onChange if language is the same', () => {
+      setupDOM();
+      const i18n = new MaruI18n();
+      i18n.init({ translations, defaultLang: 'en' });
+      i18n.setLang('ja');
+      const fn = vi.fn();
+      i18n.onChange(fn);
+      i18n.setLang('ja'); // same language
+      expect(fn).not.toHaveBeenCalled();
+    });
+  });
+
+  // ===========================================
+  // init called twice (re-initialization)
+  // ===========================================
+  describe('init() called twice', () => {
+    it('should clean up previous state and re-scan with new translations', () => {
+      document.body.innerHTML = `<p>Hello</p><p>Goodbye</p>`;
+      const i18n = new MaruI18n();
+      i18n.init({ translations: { 'Hello': { ja: 'こんにちは' } }, defaultLang: 'en' });
+      i18n.setLang('ja');
+      expect(document.querySelectorAll('p')[0].textContent).toBe('こんにちは');
+
+      // Re-init with different translations
+      i18n.init({ translations: { 'Goodbye': { ja: 'さようなら' } }, defaultLang: 'en' });
+      i18n.setLang('ja');
+      expect(document.querySelectorAll('p')[1].textContent).toBe('さようなら');
+    });
+  });
+
+  // ===========================================
+  // destroy then init (reuse)
+  // ===========================================
+  describe('destroy then init', () => {
+    it('should work correctly after destroy and re-init', () => {
+      document.body.innerHTML = `<p>Hello</p>`;
+      const i18n = new MaruI18n();
+      i18n.init({ translations, defaultLang: 'en' });
+      i18n.setLang('ja');
+      expect(document.querySelector('p')!.textContent).toBe('こんにちは');
+
+      i18n.destroy();
+      // After destroy, DOM should be restored
+      expect(document.querySelector('p')!.textContent).toBe('Hello');
+
+      // Re-init
+      i18n.init({ translations, defaultLang: 'en' });
+      i18n.setLang('ja');
+      expect(document.querySelector('p')!.textContent).toBe('こんにちは');
+    });
+
+    it('should clear collectedTexts and markedTexts on destroy', () => {
+      document.body.innerHTML = `<p>Hello</p>`;
+      const i18n = new MaruI18n();
+      i18n.init({ translations, defaultLang: 'en' });
+      i18n.t('extra');
+      expect(i18n.getCollectedTexts().length).toBeGreaterThan(0);
+
+      i18n.destroy();
+      expect(i18n.getCollectedTexts()).toEqual([]);
+      expect(i18n.getMarkedTexts()).toEqual([]);
+    });
+  });
+
+  // ===========================================
+  // Invalid CSS selectors
+  // ===========================================
+  describe('invalid CSS selectors', () => {
+    it('should not throw with invalid include selector', () => {
+      document.body.innerHTML = `<p>Hello</p>`;
+      const i18n = new MaruI18n();
+      expect(() => {
+        i18n.init({ translations, defaultLang: 'en', include: '[invalid' });
+      }).not.toThrow();
+    });
+
+    it('should not throw with invalid exclude selector', () => {
+      document.body.innerHTML = `<p>Hello</p>`;
+      const i18n = new MaruI18n();
+      expect(() => {
+        i18n.init({ translations, defaultLang: 'en', exclude: '[invalid' });
+      }).not.toThrow();
+    });
+  });
+
+  // ===========================================
+  // observe with mixed dynamic content
+  // ===========================================
+  describe('observe with mixed dynamic content', () => {
+    it('should handle dynamically added mixed text nodes', async () => {
+      document.body.innerHTML = `<div id="root"></div>`;
+      const i18n = new MaruI18n();
+      i18n.init({ translations, defaultLang: 'en' });
+      i18n.setLang('ja');
+      i18n.observe(document.getElementById('root')!);
+
+      const p = document.createElement('p');
+      p.innerHTML = 'Hello <strong>bold</strong>';
+      document.getElementById('root')!.appendChild(p);
+
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Hello should be wrapped in display:contents span and translated
+      const span = p.querySelector('span[data-maru-i18n]');
+      expect(span).not.toBeNull();
+    });
+  });
+
+  // ===========================================
+  // destroy unwraps spans
+  // ===========================================
+  describe('destroy cleanup', () => {
+    it('should unwrap display:contents spans on destroy', () => {
+      document.body.innerHTML = `<p>Hello <strong>bold</strong></p>`;
+      const i18n = new MaruI18n();
+      i18n.init({ translations, defaultLang: 'en' });
+
+      // Verify span was created
+      expect(document.querySelector('span[data-maru-i18n]')).not.toBeNull();
+
+      i18n.destroy();
+
+      // Span should be removed
+      expect(document.querySelector('span[data-maru-i18n]')).toBeNull();
+    });
   });
 });

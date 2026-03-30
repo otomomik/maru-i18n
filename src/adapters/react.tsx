@@ -45,14 +45,12 @@ export function MaruProvider<T extends Translations>({
   const [lang, setLangState] = useState(langProp ?? defaultLang ?? '');
   const [ready, setReady] = useState(false);
 
-  // Create instance once
-  if (!instanceRef.current) {
-    instanceRef.current = new MaruI18n<T>();
-  }
-  const instance = instanceRef.current;
-
-  // Init after mount (DOM is available)
+  // Init after mount (DOM is available). Re-init when key props change.
   useEffect(() => {
+    // Create a fresh instance each time to handle StrictMode and prop changes
+    const instance = new MaruI18n<T>();
+    instanceRef.current = instance;
+
     instance.init({ translations, defaultLang, include, exclude });
     instance.observe();
     setReady(true);
@@ -71,37 +69,38 @@ export function MaruProvider<T extends Translations>({
       unsub();
       destroyDevtools?.();
       instance.destroy();
+      instanceRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [translations, defaultLang, include, exclude]);
 
   // Sync lang prop → instance
   useEffect(() => {
-    if (langProp) {
-      instance.setLang(langProp);
+    if (langProp && instanceRef.current) {
+      instanceRef.current.setLang(langProp);
       setLangState(langProp);
     }
-  }, [langProp, instance]);
+  }, [langProp]);
 
   const setLang = useCallback(
     (newLang: string) => {
-      instance.setLang(newLang);
+      instanceRef.current?.setLang(newLang);
       setLangState(newLang);
     },
-    [instance],
+    [],
   );
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const t = useCallback(
-    (text: TranslationKey<T>) => instance.t(text),
-    [instance, lang],
+    (text: TranslationKey<T>) => instanceRef.current?.t(text) ?? text,
+    [lang],
   );
 
   const value: MaruContextValue<T> = {
     t,
     setLang,
     lang,
-    availableLangs: ready ? instance.getAvailableLangs() : [],
+    availableLangs: ready ? (instanceRef.current?.getAvailableLangs() ?? []) : [],
   };
 
   return (

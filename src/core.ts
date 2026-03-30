@@ -21,6 +21,8 @@ export interface MaruOptions<T extends Translations = Translations> {
   include?: string;
   /** CSS selector — skip matching elements */
   exclude?: string;
+  /** Whether to update <html lang> on setLang (default: true) */
+  syncHtmlLang?: boolean;
 }
 
 export interface MaruInstance<T extends Translations = Translations> {
@@ -49,18 +51,28 @@ const SKIP_TAGS = new Set([
 
 const ATTR = 'data-maru-i18n';
 const WS_ATTR = 'data-maru-ws';
+const WS_SEP = '\x00'; // Use NUL as separator instead of tab to avoid collision
 const IGNORE_ATTR = 'data-maru-ignore';
 
 /** Set text content, restoring leading/trailing whitespace if stored */
 function setTextWithWs(el: HTMLElement, text: string): void {
   const ws = el.getAttribute(WS_ATTR);
   if (ws) {
-    const sepIdx = ws.indexOf('\t');
+    const sepIdx = ws.indexOf(WS_SEP);
     const leading = ws.substring(0, sepIdx);
     const trailing = ws.substring(sepIdx + 1);
     el.textContent = leading + text + trailing;
   } else {
     el.textContent = text;
+  }
+}
+
+/** Safely check element.closest, returns false for invalid selectors */
+function safeClosest(el: Element, selector: string): Element | null {
+  try {
+    return el.closest(selector);
+  } catch {
+    return null;
   }
 }
 
@@ -72,23 +84,34 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
   private root: HTMLElement | null = null;
   private include: string | undefined;
   private exclude: string | undefined;
+  private syncHtmlLang = true;
   private listeners: Set<(lang: string) => void> = new Set();
   private observer: MutationObserver | null = null;
   private initialized = false;
   private isMutating = false;
   private collectedTexts: Set<string> = new Set();
   private markedTexts: Set<string> = new Set();
+  private availableLangsCache: string[] | null = null;
 
   // ----------------------------------------------------------
   // init
   // ----------------------------------------------------------
   init(options: MaruOptions<T>): void {
+    // Clean up previous init if called again
+    if (this.initialized) {
+      this.cleanup();
+    }
+
     this.translations = options.translations;
     this.defaultLang = options.defaultLang ?? '';
     this.root = options.root ?? document.body;
     this.include = options.include;
     this.exclude = options.exclude;
+    this.syncHtmlLang = options.syncHtmlLang !== false;
     this.initialized = true;
+    this.availableLangsCache = null;
+    this.collectedTexts.clear();
+    this.markedTexts.clear();
 
     this.scanAndMark(this.root);
 
@@ -109,6 +132,9 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
       return;
     }
 
+    // Skip if language hasn't changed
+    if (lang === this.currentLang) return;
+
     this.currentLang = lang;
 
     this.isMutating = true;
@@ -127,8 +153,8 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
       }
     }
 
-    // Update <html lang="...">
-    if (typeof document !== 'undefined' && document.documentElement) {
+    // Update <html lang="..."> if enabled
+    if (this.syncHtmlLang && typeof document !== 'undefined' && document.documentElement) {
       document.documentElement.lang = lang;
     }
 
@@ -160,6 +186,7 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
   }
 
   getAvailableLangs(): string[] {
+    if (this.availableLangsCache) return this.availableLangsCache;
     const langs = new Set<string>();
     if (this.defaultLang) langs.add(this.defaultLang);
     for (const key in this.translations) {
@@ -167,7 +194,8 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
         langs.add(lang);
       }
     }
-    return Array.from(langs);
+    this.availableLangsCache = Array.from(langs);
+    return this.availableLangsCache;
   }
 
   // ----------------------------------------------------------
@@ -261,8 +289,8 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
         seen.add(original);
         // Determine context for marked elements
         let ctx: Entry['context'] = 'normal';
-        if (this.exclude && el.closest(this.exclude)) ctx = 'exclude';
-        else if (this.include && el.closest(this.include)) ctx = 'include';
+        if (this.exclude && safeClosest(el, this.exclude)) ctx = 'exclude';
+        else if (this.include && safeClosest(el, this.include)) ctx = 'include';
         results.push({ text: original, element: el, context: ctx });
         continue;
       }
@@ -279,17 +307,16 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
 
       // Determine context
       let ctx: Entry['context'] = 'normal';
-      if (parent.closest(`[${IGNORE_ATTR}]`)) ctx = 'ignore';
-      else if (this.exclude && parent.closest(this.exclude)) ctx = 'exclude';
-      else if (this.include && parent.closest(this.include)) ctx = 'include';
-      else if (this.include && !parent.closest(this.include)) ctx = 'normal';
+      if (safeClosest(parent, `[${IGNORE_ATTR}]`)) ctx = 'ignore';
+      else if (this.exclude && safeClosest(parent, this.exclude)) ctx = 'exclude';
+      else if (this.include && safeClosest(parent, this.include)) ctx = 'include';
       results.push({ text, element: parent, context: ctx });
     }
     return results;
   }
 
   // ----------------------------------------------------------
-  // destroy
+  // destroy — clean up observer, listeners, and DOM modifications
   // ----------------------------------------------------------
   destroy(): void {
     if (this.observer) {
@@ -297,12 +324,46 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
       this.observer = null;
     }
     this.listeners.clear();
+
+    // Unwrap display:contents spans and remove attributes
+    if (this.initialized && this.root) {
+      this.cleanup();
+    }
     this.initialized = false;
+    this.currentLang = '';
+    this.collectedTexts.clear();
+    this.markedTexts.clear();
+    this.availableLangsCache = null;
   }
 
   // ----------------------------------------------------------
   // Private helpers
   // ----------------------------------------------------------
+
+  /** Remove all DOM modifications made by this instance */
+  private cleanup(): void {
+    const root = this.root ?? document.body;
+    const marked = root.querySelectorAll<HTMLElement>(`[${ATTR}]`);
+
+    for (const el of marked) {
+      const key = el.getAttribute(ATTR)!;
+      // Only clean up elements that belong to this instance's translations
+      if (!(key in this.translations)) continue;
+
+      // Unwrap display:contents spans
+      if (el.tagName === 'SPAN' && el.style.display === 'contents' && el.parentNode) {
+        const text = document.createTextNode(el.getAttribute(WS_ATTR)
+          ? (el.getAttribute(WS_ATTR)!.split(WS_SEP)[0] ?? '') + key + (el.getAttribute(WS_ATTR)!.split(WS_SEP)[1] ?? '')
+          : key);
+        el.parentNode.replaceChild(text, el);
+      } else {
+        // Direct attribute on parent — restore original text and remove attribute
+        el.textContent = key;
+        el.removeAttribute(ATTR);
+        el.removeAttribute(WS_ATTR);
+      }
+    }
+  }
 
   /** Collect all translatable text nodes, then mark their parents */
   private scanAndMark(root: HTMLElement): void {
@@ -315,13 +376,12 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
       acceptNode: (node) => {
         const parent = node.parentElement;
         if (!parent) return NodeFilter.FILTER_REJECT;
-        // Skip shadow DOM host's internal walker
         if (parent.shadowRoot) return NodeFilter.FILTER_REJECT;
         if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
-        if (parent.closest(`[${IGNORE_ATTR}]`)) return NodeFilter.FILTER_REJECT;
-        if (this.exclude && parent.closest(this.exclude)) return NodeFilter.FILTER_REJECT;
-        if (this.include && !parent.closest(this.include)) return NodeFilter.FILTER_REJECT;
-        // Already marked with this key
+        if (safeClosest(parent, `[${IGNORE_ATTR}]`)) return NodeFilter.FILTER_REJECT;
+        if (this.exclude && safeClosest(parent, this.exclude)) return NodeFilter.FILTER_REJECT;
+        if (this.include && !safeClosest(parent, this.include)) return NodeFilter.FILTER_REJECT;
+        // Already marked
         if (parent.hasAttribute(ATTR)) return NodeFilter.FILTER_REJECT;
 
         const text = (node.textContent ?? '').trim();
@@ -364,7 +424,7 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
         span.setAttribute(ATTR, text);
         span.style.display = 'contents';
         if (leading || trailing) {
-          span.setAttribute('data-maru-ws', `${leading}\t${trailing}`);
+          span.setAttribute(WS_ATTR, `${leading}${WS_SEP}${trailing}`);
         }
         textNode.parentNode!.replaceChild(span, textNode);
         span.appendChild(textNode);
