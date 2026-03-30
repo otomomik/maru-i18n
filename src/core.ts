@@ -67,11 +67,14 @@ function setTextWithWs(el: HTMLElement, text: string): void {
   }
 }
 
-/** Safely check element.closest, returns false for invalid selectors */
+/** Safely check element.closest, returns null for invalid selectors */
 function safeClosest(el: Element, selector: string): Element | null {
   try {
     return el.closest(selector);
-  } catch {
+  } catch (e) {
+    if (typeof console !== 'undefined') {
+      console.warn(`[maru-i18n] Invalid CSS selector: "${selector}"`, e);
+    }
     return null;
   }
 }
@@ -99,6 +102,11 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
   init(options: MaruOptions<T>): void {
     // Clean up previous init if called again
     if (this.initialized) {
+      // Disconnect observer before cleanup to prevent it from reacting to cleanup mutations
+      if (this.observer) {
+        this.observer.disconnect();
+        this.observer = null;
+      }
       this.cleanup();
     }
 
@@ -345,6 +353,7 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
     const root = this.root ?? document.body;
     const marked = root.querySelectorAll<HTMLElement>(`[${ATTR}]`);
 
+    this.isMutating = true;
     for (const el of marked) {
       const key = el.getAttribute(ATTR)!;
       // Only clean up elements that belong to this instance's translations
@@ -352,10 +361,15 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
 
       // Unwrap display:contents spans
       if (el.tagName === 'SPAN' && el.style.display === 'contents' && el.parentNode) {
-        const text = document.createTextNode(el.getAttribute(WS_ATTR)
-          ? (el.getAttribute(WS_ATTR)!.split(WS_SEP)[0] ?? '') + key + (el.getAttribute(WS_ATTR)!.split(WS_SEP)[1] ?? '')
-          : key);
-        el.parentNode.replaceChild(text, el);
+        const wsAttr = el.getAttribute(WS_ATTR);
+        let restored: string;
+        if (wsAttr) {
+          const parts = wsAttr.split(WS_SEP);
+          restored = (parts[0] ?? '') + key + (parts[1] ?? '');
+        } else {
+          restored = key;
+        }
+        el.parentNode.replaceChild(document.createTextNode(restored), el);
       } else {
         // Direct attribute on parent — restore original text and remove attribute
         el.textContent = key;
@@ -363,6 +377,7 @@ export class MaruI18n<T extends Translations = Translations> implements MaruInst
         el.removeAttribute(WS_ATTR);
       }
     }
+    this.isMutating = false;
   }
 
   /** Collect all translatable text nodes, then mark their parents */

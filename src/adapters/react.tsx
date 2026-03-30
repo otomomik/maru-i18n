@@ -32,8 +32,20 @@ export interface MaruProviderProps<T extends Translations = Translations> {
   devtools?: boolean | DevtoolsOptions;
 }
 
+/** Stable ref for translations — only updates when keys or values actually change */
+function useStableTranslations<T extends Translations>(translations: T): T {
+  const ref = useRef(translations);
+  const prevKeys = useRef('');
+  const json = JSON.stringify(translations);
+  if (json !== prevKeys.current) {
+    prevKeys.current = json;
+    ref.current = translations;
+  }
+  return ref.current;
+}
+
 export function MaruProvider<T extends Translations>({
-  translations,
+  translations: translationsProp,
   defaultLang,
   lang: langProp,
   children,
@@ -41,6 +53,7 @@ export function MaruProvider<T extends Translations>({
   exclude,
   devtools: devtoolsProp,
 }: MaruProviderProps<T>) {
+  const translations = useStableTranslations(translationsProp);
   const instanceRef = useRef<MaruI18n<T> | null>(null);
   const [lang, setLangState] = useState(langProp ?? defaultLang ?? '');
   const [ready, setReady] = useState(false);

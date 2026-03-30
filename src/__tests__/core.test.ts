@@ -737,6 +737,22 @@ describe('MaruI18n', () => {
       i18n.setLang('ja');
       expect(document.querySelectorAll('p')[1].textContent).toBe('さようなら');
     });
+
+    it('should disconnect observer before cleanup on re-init', () => {
+      document.body.innerHTML = `<p>Hello</p>`;
+      const trans1 = { 'Hello': { ja: 'こんにちは' } };
+      const trans2 = { 'Hello': { ja: '再初期化' } };
+      const i18n = new MaruI18n();
+      i18n.init({ translations: trans1, defaultLang: 'en' });
+      i18n.observe();
+      i18n.setLang('ja');
+      expect(document.querySelector('p')!.textContent).toBe('こんにちは');
+
+      // Re-init — observer should be disconnected before cleanup
+      i18n.init({ translations: trans2, defaultLang: 'en' });
+      i18n.setLang('ja');
+      expect(document.querySelector('p')!.textContent).toBe('再初期化');
+    });
   });
 
   // ===========================================
@@ -791,6 +807,15 @@ describe('MaruI18n', () => {
       expect(() => {
         i18n.init({ translations, defaultLang: 'en', exclude: '[invalid' });
       }).not.toThrow();
+    });
+
+    it('should warn on invalid selector', () => {
+      document.body.innerHTML = `<p>Hello</p>`;
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const i18n = new MaruI18n();
+      i18n.init({ translations, defaultLang: 'en', include: '[invalid' });
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
     });
   });
 
