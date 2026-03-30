@@ -1,0 +1,137 @@
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  type ReactNode,
+} from 'react';
+import { MaruI18n } from '../core';
+import type { Translations, TranslationKey } from '../core';
+import { mountDevtools } from '../devtools/index';
+import type { DevtoolsOptions } from '../devtools/index';
+
+interface MaruContextValue<T extends Translations = Translations> {
+  t: (text: TranslationKey<T>) => string;
+  setLang: (lang: string) => void;
+  lang: string;
+  availableLangs: string[];
+}
+
+const MaruContext = createContext<MaruContextValue<Translations> | null>(null);
+
+export interface MaruProviderProps<T extends Translations = Translations> {
+  translations: T;
+  defaultLang?: string;
+  lang?: string;
+  children: ReactNode;
+  include?: string;
+  exclude?: string;
+  /** Show devtools panel. Pass `true` or a DevtoolsOptions object. */
+  devtools?: boolean | DevtoolsOptions;
+}
+
+/** Stable ref for translations — only updates when keys or values actually change */
+function useStableTranslations<T extends Translations>(translations: T): T {
+  const ref = useRef(translations);
+  const prevKeys = useRef('');
+  const json = JSON.stringify(translations);
+  if (json !== prevKeys.current) {
+    prevKeys.current = json;
+    ref.current = translations;
+  }
+  return ref.current;
+}
+
+export function MaruProvider<T extends Translations>({
+  translations: translationsProp,
+  defaultLang,
+  lang: langProp,
+  children,
+  include,
+  exclude,
+  devtools: devtoolsProp,
+}: MaruProviderProps<T>) {
+  const translations = useStableTranslations(translationsProp);
+  const instanceRef = useRef<MaruI18n<T> | null>(null);
+  const [lang, setLangState] = useState(langProp ?? defaultLang ?? '');
+  const [ready, setReady] = useState(false);
+
+  // Init after mount (DOM is available). Re-init when key props change.
+  useEffect(() => {
+    // Create a fresh instance each time to handle StrictMode and prop changes
+    const instance = new MaruI18n<T>();
+    instanceRef.current = instance;
+
+    instance.init({ translations, defaultLang, include, exclude });
+    instance.observe();
+    setReady(true);
+
+    let destroyDevtools: (() => void) | undefined;
+    if (devtoolsProp) {
+      const opts = typeof devtoolsProp === 'object' ? devtoolsProp : undefined;
+      destroyDevtools = mountDevtools(instance, opts);
+    }
+
+    const unsub = instance.onChange((newLang) => {
+      setLangState(newLang);
+    });
+
+    return () => {
+      unsub();
+      destroyDevtools?.();
+      instance.destroy();
+      instanceRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translations, defaultLang, include, exclude]);
+
+  // Sync lang prop → instance
+  useEffect(() => {
+    if (langProp && instanceRef.current) {
+      instanceRef.current.setLang(langProp);
+      setLangState(langProp);
+    }
+  }, [langProp]);
+
+  const setLang = useCallback(
+    (newLang: string) => {
+      instanceRef.current?.setLang(newLang);
+      setLangState(newLang);
+    },
+    [],
+  );
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const t = useCallback(
+    (text: TranslationKey<T>) => instanceRef.current?.t(text) ?? text,
+    [lang],
+  );
+
+  const value: MaruContextValue<T> = {
+    t,
+    setLang,
+    lang,
+    availableLangs: ready ? (instanceRef.current?.getAvailableLangs() ?? []) : [],
+  };
+
+  return (
+    <MaruContext.Provider value={value as MaruContextValue<Translations>}>
+      {children}
+    </MaruContext.Provider>
+  );
+}
+
+export function useMaruI18n<T extends Translations = Translations>() {
+  const ctx = useContext(MaruContext);
+  if (!ctx) {
+    throw new Error('useMaruI18n must be used inside <MaruProvider>');
+  }
+  return ctx as MaruContextValue<T>;
+}
+
+/** @deprecated Use useMaruI18n instead */
+export const useMaruTranslation = useMaruI18n;
+
+export { MaruContext };

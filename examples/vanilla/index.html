@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>maru-i18n Vanilla Demo</title>
+    <style>
+      body { font-family: sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+      h1 { margin-bottom: 8px; }
+      h2 { margin-top: 32px; color: #555; font-size: 16px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+      nav { margin-bottom: 24px; }
+      button { margin-right: 6px; margin-bottom: 6px; padding: 6px 14px; cursor: pointer; }
+      .info { background: #f5f5f5; padding: 12px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; font-family: monospace; }
+      .section { margin-bottom: 24px; }
+      .excluded-area { border: 2px dashed #ccc; padding: 12px; border-radius: 6px; }
+      .included-area { border: 2px solid #4a6cf7; padding: 12px; border-radius: 6px; }
+      .dynamic-container { min-height: 40px; background: #fafafa; padding: 12px; border-radius: 6px; }
+      footer { margin-top: 40px; color: #888; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h1>Hello, World!</h1>
+    <p>This is a comprehensive demo of maru-i18n.</p>
+
+    <h2>Language Switching</h2>
+    <nav id="lang-buttons"></nav>
+    <div class="info" id="lang-info" data-maru-ignore></div>
+
+    <h2>onChange Listener</h2>
+    <div class="info" id="on-change-log" data-maru-ignore>Waiting for language change...</div>
+
+    <h2>t() String Translation</h2>
+    <div class="info" id="t-demo" data-maru-ignore></div>
+
+    <h2>Ignore</h2>
+    <div class="section">
+      <p><strong>data-maru-ignore attribute:</strong></p>
+      <div class="excluded-area" data-maru-ignore>
+        <p>This text has data-maru-ignore and will NOT be translated.</p>
+      </div>
+    </div>
+    <div class="section">
+      <p><strong>ignore() method:</strong></p>
+      <div class="excluded-area" id="ignored-by-js">
+        <p>This text is ignored via ignore() and will NOT be translated.</p>
+      </div>
+    </div>
+
+    <h2>Exclude Option</h2>
+    <div class="excluded-area exclude-me">
+      <p>This text is inside .exclude-me and will NOT be translated.</p>
+    </div>
+
+    <h2>Include Option (separate instance)</h2>
+    <div>
+      <p>This text is outside the include area.</p>
+      <div class="included-area include-only">
+        <p>This text is inside the include area.</p>
+        <p>This text is in include but has no translation.</p>
+      </div>
+    </div>
+
+    <h2>Exclude with nested Include</h2>
+    <div class="excluded-area exclude-me">
+      <p>This text is excluded and will NOT be translated.</p>
+      <div class="included-area include-nested">
+        <p>This text is inside nested include.</p>
+      </div>
+    </div>
+
+    <h2>Dynamic DOM</h2>
+    <button id="add-dynamic">Add dynamic content</button>
+    <button id="remove-dynamic">Clear</button>
+    <div class="dynamic-container" id="dynamic-container"></div>
+
+    <h2>Collected Texts</h2>
+    <div class="info" id="collected-texts" data-maru-ignore></div>
+
+    <h2>Mixed Text Nodes</h2>
+    <p><span>Hello, World!</span> is <strong>bold here</strong> and continues.</p>
+
+    <footer>Powered by maru-i18n</footer>
+
+    <script type="module">
+      import { createMaruI18n } from '../../src/index.ts';
+      import { mountDevtools } from '../../src/devtools/index.ts';
+
+      const translations = {
+        'Hello, World!': {
+          ja: 'こんにちは、世界！',
+          fr: 'Bonjour, le monde !',
+        },
+        'This is a comprehensive demo of maru-i18n.': {
+          ja: 'これは maru-i18n の包括的なデモです。',
+          fr: 'Ceci est une démonstration complète de maru-i18n.',
+        },
+        'Language Switching': {
+          ja: '言語切り替え',
+          fr: 'Changement de langue',
+        },
+        'onChange Listener': {
+          ja: 'onChange リスナー',
+          fr: 'Écouteur onChange',
+        },
+        't() String Translation': {
+          ja: 't() 文字列翻訳',
+          fr: 'Traduction de chaîne t()',
+        },
+        'Ignore': {
+          ja: '無視',
+          fr: 'Ignorer',
+        },
+        'data-maru-ignore attribute:': {
+          ja: 'data-maru-ignore 属性:',
+          fr: 'Attribut data-maru-ignore :',
+        },
+        'ignore() method:': {
+          ja: 'ignore() メソッド:',
+          fr: 'Méthode ignore() :',
+        },
+        'This text has data-maru-ignore and will NOT be translated.': {
+          ja: '（翻訳されないはず）',
+          fr: '(Ne devrait pas être traduit)',
+        },
+        'This text is ignored via ignore() and will NOT be translated.': {
+          ja: '（翻訳されないはず）',
+          fr: '(Ne devrait pas être traduit)',
+        },
+        'Exclude Option': {
+          ja: '除外オプション',
+          fr: 'Option d\'exclusion',
+        },
+        'This text is inside .exclude-me and will NOT be translated.': {
+          ja: '（翻訳されないはず）',
+          fr: '(Ne devrait pas être traduit)',
+        },
+        'Include Option (separate instance)': {
+          ja: 'インクルードオプション（別インスタンス）',
+          fr: 'Option d\'inclusion (instance séparée)',
+        },
+        'Exclude with nested Include': {
+          ja: '除外の中にインクルード',
+          fr: 'Exclusion avec inclusion imbriquée',
+        },
+        'This text is excluded and will NOT be translated.': {
+          ja: '（翻訳されないはず）',
+          fr: '(Ne devrait pas être traduit)',
+        },
+        'Dynamic DOM': {
+          ja: '動的 DOM',
+          fr: 'DOM dynamique',
+        },
+        'Add dynamic content': {
+          ja: '動的コンテンツを追加',
+          fr: 'Ajouter du contenu dynamique',
+        },
+        'Clear': {
+          ja: 'クリア',
+          fr: 'Effacer',
+        },
+        'Dynamically added content!': {
+          ja: '動的に追加されたコンテンツ！',
+          fr: 'Contenu ajouté dynamiquement !',
+        },
+        'Collected Texts': {
+          ja: '収集されたテキスト',
+          fr: 'Textes collectés',
+        },
+        'Mixed Text Nodes': {
+          ja: '混在テキストノード',
+          fr: 'Nœuds de texte mixtes',
+        },
+        'is': {
+          ja: 'は',
+          fr: 'est',
+        },
+        'bold here': {
+          ja: 'ここが太字',
+          fr: 'gras ici',
+        },
+        'and continues.': {
+          ja: 'で、続きます。',
+          fr: 'et continue.',
+        },
+        'Powered by maru-i18n': {
+          ja: 'maru-i18n で動いています',
+          fr: 'Propulsé par maru-i18n',
+        },
+      };
+
+      const includeTranslations = {
+        'This text is inside the include area.': {
+          ja: 'このテキストはインクルード領域内です。',
+          fr: 'Ce texte est dans la zone d\'inclusion.',
+        },
+      };
+
+      const nestedIncludeTranslations = {
+        'This text is inside nested include.': {
+          ja: 'このテキストはネストされたインクルード内です。',
+          fr: 'Ce texte est dans l\'inclusion imbriquée.',
+        },
+      };
+
+      // ===== Main instance =====
+      const i18n = createMaruI18n();
+      i18n.ignore(document.getElementById('ignored-by-js'));
+      i18n.init({
+        translations,
+        defaultLang: 'en',
+        exclude: '.exclude-me',
+      });
+      i18n.observe();
+
+      // ===== Include-only instance =====
+      const i18nInclude = createMaruI18n();
+      i18nInclude.init({
+        translations: includeTranslations,
+        defaultLang: 'en',
+        include: '.include-only',
+      });
+
+      // ===== Nested include (inside exclude) =====
+      const i18nNested = createMaruI18n();
+      i18nNested.init({
+        translations: nestedIncludeTranslations,
+        defaultLang: 'en',
+        include: '.include-nested',
+      });
+
+      // ===== Devtools =====
+      mountDevtools(i18n, {
+        includeSelectors: ['.include-only', '.include-nested'],
+      });
+
+      // ===== Language buttons =====
+      const langNav = document.getElementById('lang-buttons');
+      for (const l of i18n.getAvailableLangs()) {
+        const btn = document.createElement('button');
+        btn.textContent = l;
+        btn.onclick = () => {
+          i18n.setLang(l);
+          i18nInclude.setLang(l);
+          i18nNested.setLang(l);
+          updateAll();
+        };
+        langNav.appendChild(btn);
+      }
+
+      function updateAll() {
+        updateInfo();
+        updateT();
+        updateCollected();
+      }
+
+      function updateInfo() {
+        document.getElementById('lang-info').textContent =
+          `getLang(): "${i18n.getLang()}" | getDefaultLang(): "${i18n.getDefaultLang()}" | getAvailableLangs(): [${i18n.getAvailableLangs().join(', ')}]`;
+      }
+      updateInfo();
+
+      let changeCount = 0;
+      i18n.onChange((lang) => {
+        changeCount++;
+        document.getElementById('on-change-log').textContent =
+          `onChange fired #${changeCount}: lang = "${lang}"`;
+      });
+
+      function updateT() {
+        document.getElementById('t-demo').textContent =
+          `t("Hello, World!") → "${i18n.t('Hello, World!')}"`;
+      }
+      updateT();
+
+      function updateCollected() {
+        const texts = i18n.getCollectedTexts();
+        document.getElementById('collected-texts').textContent =
+          `${texts.length} texts: ${JSON.stringify(texts, null, 2)}`;
+      }
+      updateCollected();
+
+      document.getElementById('add-dynamic').onclick = () => {
+        const p = document.createElement('p');
+        p.textContent = 'Dynamically added content!';
+        document.getElementById('dynamic-container').appendChild(p);
+      };
+      document.getElementById('remove-dynamic').onclick = () => {
+        document.getElementById('dynamic-container').innerHTML = '';
+      };
+    </script>
+  </body>
+</html>
