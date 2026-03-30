@@ -13,10 +13,9 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run typecheck
