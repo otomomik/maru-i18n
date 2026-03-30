@@ -3,11 +3,10 @@
 CSR-only i18n library. No HTML changes needed — just provide translation files.
 
 ## Commands
-- `npm run dev` — Vanilla example (vite serve)
-- `npm run dev:react` — React example
 - `npm run build` — ESM/CJS + UMD build
 - `npm run test` — vitest (happy-dom)
 - `npm run typecheck` — tsc --noEmit
+- Examples: `npx vite serve examples/vanilla` or `npx vite serve examples/react`
 
 ## Architecture
 - `src/core.ts` — MaruI18n class. All instances share `data-maru-i18n` attribute. `setLang` only updates keys in own translations.
